@@ -1,0 +1,44 @@
+# VietTTS Desktop Application
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Output files
+output/*.wav
+output/*.mp3
+
+# Model files (large, downloaded automatically)
+pretrained-models/
+
+# User settings
+settings.json
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Distribution
+dist/
+build/
+*.egg-info/
