@@ -1,61 +1,65 @@
-# VietTTS Desktop Application
-# Vietnamese Text-to-Speech with Voice Cloning
+# Vietnamese TTS - Style-Bert-VITS2
+# GPU Acceleration via DirectML
 
-# ============================================
-# Core TTS Engine (installed from GitHub in setup_env.bat)
-# ============================================
-# viettts is installed via: pip install git+https://github.com/dangvansam/viet-tts.git
+# Core - ONNX Runtime for AMD GPU
+onnxruntime-directml>=1.19.0
 
-# ============================================
-# Core TTS Dependencies (from viet-tts)
-# ============================================
-# Note: For CPU-only, install torch with:
-# pip install torch==2.0.1 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cpu
+# PyTorch (CPU for text processing)
+torch>=2.3.0
+torchaudio>=2.3.0
 
-torch==2.0.1
-torchaudio==2.0.2
-conformer==0.3.2
-diffusers==0.27.2
-hydra-core==1.3.2
-hyperpyyaml==1.2.2
-librosa==0.10.2
-omegaconf==2.3.0
-onnx>=1.16.0
-onnxruntime>=1.16.1
-protobuf==4.25.0
-soundfile==0.12.1
-vinorm>=2.0.7
-huggingface-hub==0.24.7
-silero-vad>=5.1.2
-tiktoken>=0.8.0
-
-# ============================================
-# GUI Dependencies
-# ============================================
-customtkinter>=5.2.0
-pillow>=10.0.0
-
-# ============================================
-# Audio Playback
-# ============================================
-pygame>=2.5.0
-
-# ============================================
+# Text Pronnxruntime-directml
+torch
+transformers
+scipy
+librosa
+soundfile
+loguru
+rich
+onnx
+onnxsim
+neucodec
+phonemizer
+accelerate
+addict
+pyyaml
+huggingface-hub
+numpy<2.4
+customtkinter
+pickle5; python_version < "3.8"
+importlib-metadata; python_version < "3.8"
+typing-extensions
+screeninfo
+pywin32; sys_platform == "win32"
+winshell; sys_platform == "win32"
+comtypes; sys_platform == "win32"
+vlc
+python-vlc
+yt_dlp
+pydub
+pathvalidate
+fastapi
+uvicorn
+python-multipart
+aiofiles
+aiohttp
+tenacity
+openai
+python-dotenv
+psutil
+humanize
+filetype
+moviepy
+pypng
+pyqrcode
+keyboard
+plyer
+beautifulsoup4
+lxml
+requests
+charset-normalizer
+idna
+urllib3
+certifi
 # Utilities
-# ============================================
-loguru>=0.7.2
-numpy>=1.24.0
-pysrt>=1.1.2
-requests>=2.31.0
-tqdm>=4.66.0
-
-# ============================================
-# PRO MAX - Audio Processing (NEW)
-# ============================================
-scipy>=1.11.0
-noisereduce>=3.0.0
-
-# ============================================
-# PRO MAX - Enhanced Features (NEW)
-# ============================================
-# For advanced audio visualization and processing
+requests

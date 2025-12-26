@@ -223,11 +223,11 @@ class VoiceSelectorPanel(ThemedFrame):
             pass
     
     def get_selected_voice(self) -> Optional[str]:
-        """Get currently selected voice file path"""
+        """Get currently selected voice name or path"""
         if self.use_clone and self.clone_file_path:
             return self.clone_file_path
-        elif self.selected_voice and self.selected_voice in self.voices:
-            return self.voices[self.selected_voice]
+        elif self.selected_voice:
+            return self.selected_voice
         return None
     
     def get_voice_name(self) -> str:

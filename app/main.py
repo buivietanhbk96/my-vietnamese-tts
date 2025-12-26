@@ -11,6 +11,19 @@ Or run directly:
 
 import sys
 import os
+import io
+
+# Force UTF-8 encoding for the entire process on Windows
+# This must be done before any other imports that might use stdout/stderr
+if sys.platform == 'win32':
+    # Set environment variable for subprocesses
+    os.environ["PYTHONUTF8"] = "1"
+    
+    # Re-initialize stdout and stderr with UTF-8 encoding
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

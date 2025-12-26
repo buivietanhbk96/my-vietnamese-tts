@@ -1,6 +1,7 @@
 @echo off
 echo ============================================
-echo VietTTS Desktop - Environment Setup
+echo Vietnamese TTS PRO - VieNeu-TTS Setup
+echo AMD GPU Acceleration via DirectML
 echo ============================================
 echo.
 
@@ -15,8 +16,8 @@ if errorlevel 1 (
 
 :: Create virtual environment
 echo [1/5] Creating virtual environment...
-if not exist "venv" (
-    python -m venv venv
+if not exist "env" (
+    python -m venv env
     echo Virtual environment created.
 ) else (
     echo Virtual environment already exists.
@@ -24,27 +25,44 @@ if not exist "venv" (
 
 :: Activate virtual environment
 echo [2/5] Activating virtual environment...
-call venv\Scripts\activate.bat
+call env\Scripts\activate.bat
 
-:: Install PyTorch CPU version first
-echo [3/5] Installing PyTorch (CPU version)...
-pip install torch==2.0.1 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cpu
+:: Upgrade pip
+echo [3/5] Upgrading pip...
+python -m pip install --upgrade pip
 
-:: Install viettts from GitHub
-echo [4/5] Installing VietTTS core engine...
-pip install git+https://github.com/dangvansam/viet-tts.git
+:: Install ONNX Runtime DirectML for AMD GPU
+echo [4/5] Installing ONNX Runtime DirectML (AMD GPU support)...
+pip install onnxruntime-directml>=1.19.0
 
-:: Install other requirements
-echo [5/5] Installing other dependencies...
-pip install -r requirements.txt
+:: Install VieNeu-TTS dependencies
+echo [5/5] Installing VieNeu-TTS dependencies...
+pip install torch>=2.3.0 torchaudio>=2.3.0
+pip install transformers librosa soundfile "numpy<2.4"
+pip install huggingface_hub pyyaml loguru rich addict accelerate
+pip install onnx onnxsim neucodec phonemizer
+
+:: Check for eSpeak NG
+echo.
+echo ============================================
+echo Checking for eSpeak NG...
+echo ============================================
+if exist "C:\Program Files\eSpeak NG\libespeak-ng.dll" (
+    echo [OK] eSpeak NG found.
+) else (
+    echo [WARNING] eSpeak NG NOT found at C:\Program Files\eSpeak NG\
+    echo Vietnamese phonemization will fall back to dictionary-only mode.
+    echo For best quality, please install eSpeak NG from:
+    echo https://github.com/espeak-ng/espeak-ng/releases
+)
 
 echo.
 echo ============================================
-echo Setup complete!
+echo Setup Complete!
 echo ============================================
 echo.
 echo To run the application:
-echo   1. Activate: venv\Scripts\activate
+echo   1. Activate: env\Scripts\activate
 echo   2. Run: python -m app.main
 echo.
 pause

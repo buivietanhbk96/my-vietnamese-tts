@@ -1,6 +1,6 @@
 """
-Configuration settings for VietTTS Desktop Application
-Optimized for CPU inference
+Configuration settings for Vietnamese TTS Desktop Application
+Using VieNeu-TTS (SOTA Vietnamese TTS) with DirectML (AMD GPU) acceleration
 """
 
 import os
@@ -14,33 +14,43 @@ class Config:
     # Paths
     # ============================================
     APP_DIR = Path(__file__).parent.parent
-    MODEL_DIR = APP_DIR / "pretrained-models"
+    MODEL_DIR = APP_DIR / "model_assets" / "vietnamese"
     SAMPLES_DIR = APP_DIR / "samples"
     OUTPUT_DIR = APP_DIR / "output"
     CONFIG_FILE = APP_DIR / "settings.json"
     
-    # ============================================
-    # TTS Engine Settings (CPU Optimized)
-    # ============================================
-    DEVICE = "cpu"
-    LOAD_JIT = False      # JIT slower on CPU
-    LOAD_ONNX = True      # ONNX faster on CPU
-    STREAM = False        # Non-stream for better quality
+    # VieNeu-TTS paths
+    VIENEU_DIR = APP_DIR / "app" / "services" / "vieneu"
     
-    # Threading
-    TORCH_NUM_THREADS = 4  # Adjust based on CPU cores
+    # Available voice models
+    VOICE_MODELS = {
+        "VieNeu-TTS": APP_DIR / "model_assets" / "vietnamese",
+    }
+    DEFAULT_MODEL = "VieNeu-TTS"
+    
+    # ============================================
+    # TTS Engine Settings (DirectML GPU)
+    # ============================================
+    DEVICE = None  # None = auto-detect
+    PREFER_GPU = True  # Use DirectML for AMD GPU
+    
+    # ONNX Runtime Settings
+    ONNX_PROVIDERS = ['DmlExecutionProvider', 'CPUExecutionProvider']
+    
+    # Threading (for CPU operations)
+    TORCH_NUM_THREADS = 4
     
     # ============================================
     # Voice Cloning Settings
     # ============================================
     MIN_VOICE_DURATION = 3.0   # seconds
-    MAX_VOICE_DURATION = 5.0   # seconds
-    VOICE_SAMPLE_RATE = 16000  # 16kHz for voice input
+    MAX_VOICE_DURATION = 30.0  # seconds (Style-Bert-VITS2 supports longer)
+    VOICE_SAMPLE_RATE = 16000
     
     # ============================================
     # Audio Output Settings
     # ============================================
-    OUTPUT_SAMPLE_RATE = 22050
+    OUTPUT_SAMPLE_RATE = 44100  # Style-Bert-VITS2 default
     DEFAULT_SPEED = 1.0
     MIN_SPEED = 0.5
     MAX_SPEED = 2.0
@@ -50,23 +60,16 @@ class Config:
     # ============================================
     # SRT Processing Settings
     # ============================================
-    MAX_SRT_SUBTITLES = 10000  # Maximum subtitles to process
+    MAX_SRT_SUBTITLES = 10000
     SRT_OUTPUT_FORMAT = "wav"
     
     # ============================================
     # UI Settings
     # ============================================
-    WINDOW_TITLE = "VietTTS - Vietnamese Text to Speech"
+    WINDOW_TITLE = "Vietnamese TTS PRO - VieNeu-TTS"
     WINDOW_MIN_WIDTH = 800
     WINDOW_MIN_HEIGHT = 600
     DEFAULT_WINDOW_SIZE = "900x700"
-    
-    # ============================================
-    # Voice Samples Download
-    # ============================================
-    VOICE_SAMPLES_REPO = "https://github.com/dangvansam/viet-tts"
-    VOICE_SAMPLES_BRANCH = "main"
-    VOICE_SAMPLES_PATH = "samples"
     
     @classmethod
     def ensure_directories(cls):
@@ -77,55 +80,48 @@ class Config:
     
     @classmethod
     def setup_torch_threads(cls):
-        """Configure PyTorch for CPU optimization"""
+        """Configure PyTorch for optimal performance"""
         import torch
         torch.set_num_threads(cls.TORCH_NUM_THREADS)
-        # Disable CUDA if available (force CPU)
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        
+        if cls.DEVICE == "cpu" or not cls.PREFER_GPU:
+            os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
 class ThemeColors:
-    """Dark mode color palette - inspired by ui-ux-pro-max-skill"""
+    """Dark mode color palette"""
     
-    # Background colors
-    BG_PRIMARY = "#0F172A"      # Slate 900
-    BG_SECONDARY = "#1E293B"    # Slate 800
-    BG_TERTIARY = "#334155"     # Slate 700
+    BG_PRIMARY = "#0F172A"
+    BG_SECONDARY = "#1E293B"
+    BG_TERTIARY = "#334155"
     
-    # Accent colors
-    PRIMARY = "#6366F1"         # Indigo 500
-    PRIMARY_HOVER = "#4F46E5"   # Indigo 600
-    SECONDARY = "#8B5CF6"       # Violet 500
+    PRIMARY = "#6366F1"
+    PRIMARY_HOVER = "#4F46E5"
+    SECONDARY = "#8B5CF6"
     
-    # Text colors
-    TEXT_PRIMARY = "#F8FAFC"    # Slate 50
-    TEXT_SECONDARY = "#94A3B8"  # Slate 400
-    TEXT_MUTED = "#64748B"      # Slate 500
+    TEXT_PRIMARY = "#F8FAFC"
+    TEXT_SECONDARY = "#94A3B8"
+    TEXT_MUTED = "#64748B"
     
-    # Status colors
-    SUCCESS = "#22C55E"         # Green 500
-    WARNING = "#F59E0B"         # Amber 500
-    ERROR = "#EF4444"           # Red 500
-    INFO = "#3B82F6"            # Blue 500
+    SUCCESS = "#22C55E"
+    WARNING = "#F59E0B"
+    ERROR = "#EF4444"
+    INFO = "#3B82F6"
     
-    # Border colors
-    BORDER = "#334155"          # Slate 700
-    BORDER_FOCUS = "#6366F1"    # Indigo 500
+    BORDER = "#334155"
+    BORDER_FOCUS = "#6366F1"
     
-    # Button colors
     BTN_PRIMARY_BG = "#6366F1"
     BTN_PRIMARY_HOVER = "#4F46E5"
     BTN_SECONDARY_BG = "#334155"
     BTN_SECONDARY_HOVER = "#475569"
     BTN_DANGER_BG = "#DC2626"
     BTN_DANGER_HOVER = "#B91C1C"
-    BTN_DANGER_HOVER = "#B91C1C"
 
 
 class Fonts:
-    """Font configuration - using system fonts with fallbacks"""
+    """Font configuration"""
     
-    # Windows system fonts
     HEADING = ("Segoe UI", 16, "bold")
     SUBHEADING = ("Segoe UI", 14, "bold")
     BODY = ("Segoe UI", 12)

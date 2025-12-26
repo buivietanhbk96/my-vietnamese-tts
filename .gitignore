@@ -26,6 +26,8 @@ output/*.mp3
 
 # Model files (large, downloaded automatically)
 pretrained-models/
+model_assets/
+trash_logs/
 
 # User settings
 settings.json

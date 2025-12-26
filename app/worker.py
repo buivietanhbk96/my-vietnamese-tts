@@ -256,11 +256,17 @@ class TTSWorker:
         if not os.path.exists(voice_path):
             raise FileNotFoundError(f"Voice file not found: {voice_path}")
         
+        # Progress callback wrapper
+        def progress_wrapper(status, progress):
+            if self.on_progress:
+                self.on_progress(progress, 1.0, status)  # Map to (idx, total, status) interface
+        
         wav = self.tts_engine.synthesize(
             text=params["text"],
             voice_path=voice_path,
             speed=params["speed"],
-            output_path=params["output_path"]
+            output_path=params["output_path"],
+            progress_callback=progress_wrapper
         )
         
         return params["output_path"]

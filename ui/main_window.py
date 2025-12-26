@@ -12,6 +12,7 @@ from loguru import logger
 
 from app.config import Config, ThemeColors, Fonts
 from app.tts_engine import TTSEngine
+from app.device_manager import get_device_manager
 from app.srt_processor import SRTProcessor, SRTParser
 from app.worker import TTSWorker, ResultCallback, ErrorCallback, ProgressCallback
 from app.exceptions import VietTTSError
@@ -102,6 +103,11 @@ class MainWindow(ctk.CTk):
     def _show_main_window(self):
         """Show main window and close splash"""
         self.splash.close()
+        
+        # Clear splash callback to avoid "invalid command name" errors
+        if self.tts_engine:
+            self.tts_engine.progress_callback = None
+            
         self.deiconify()
         self.lift()
     
@@ -332,7 +338,13 @@ class MainWindow(ctk.CTk):
         
         # Set initial status
         self.status_bar.set_ready()
-        self.status_bar.set_device_info("CPU")
+        
+        # Show actual device info from device manager
+        device_manager = get_device_manager()
+        device_display = device_manager.device_name
+        if device_manager.is_gpu:
+            device_display = f"🚀 {device_display}"
+        self.status_bar.set_device_info(device_display)
     
     def _load_settings(self):
         """Load saved settings"""
@@ -397,6 +409,14 @@ class MainWindow(ctk.CTk):
         self.status_bar.set_processing("Generating speech...")
         self.tts_progress_frame.grid()
         self.tts_progress.set(0)
+        
+        # Setup progress callback
+        def progress_callback(idx, total, status):
+            # idx is actually 0.0-1.0 progress for single synthesis
+            self.tts_progress.set(idx)
+            self.status_bar.set_processing(status)
+        
+        self.worker.on_progress = ProgressCallback(self, progress_callback)
         
         # Submit to worker
         self.worker.submit_synthesize(

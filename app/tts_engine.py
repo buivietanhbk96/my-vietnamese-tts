@@ -1,351 +1,297 @@
 """
-TTS Engine wrapper for VietTTS
+TTS Engine wrapper for VieNeu-TTS
 Handles model loading, inference, and voice cloning
+Supports GPU (DirectML) via ONNX Runtime for Codec
 """
 
 import os
 import time
+import json
 import numpy as np
 import torch
 from pathlib import Path
-from typing import Optional, Generator, Callable
+from typing import Optional, Generator, Callable, Union, Dict
 from loguru import logger
 
 from app.config import Config
+from app.device_manager import get_device_manager
+from app.services.vieneu_engine import VieNeuEngine
 from app.exceptions import (
     ModelNotFoundError,
     ModelDownloadError,
     VoiceFileError,
-    VoiceDurationError,
     InferenceError,
     EmptyTextError
 )
 
-
 class TTSEngine:
     """
-    VietTTS Engine wrapper
+    VieNeu-TTS Engine wrapper
     Provides interface for TTS synthesis and voice cloning
     """
     
     def __init__(self, progress_callback: Optional[Callable] = None):
-        """
-        Initialize TTS Engine
-        
-        Args:
-            progress_callback: Optional callback function for progress updates
-                              signature: callback(status: str, progress: float)
-        """
         self.progress_callback = progress_callback
-        self.tts = None
+        self.engine: Optional[VieNeuEngine] = None
         self.model_loaded = False
-        self.voices = {}
+        self.voices: Dict[str, dict] = {} # Name -> {type, path, ref_text, codes}
+        self.device_manager = get_device_manager()
         
-        # Setup CPU optimization
-        Config.setup_torch_threads()
+        # Ensure directories
         Config.ensure_directories()
+        
+        logger.info(f"TTS Engine initialized. Device manager: {self.device_manager.device_name}")
     
-    def _update_progress(self, status: str, progress: float = 0):
+    def _update_progress(self, status: str, progress: float = 0, callback: Optional[Callable] = None):
         """Send progress update through callback"""
-        if self.progress_callback:
-            self.progress_callback(status, progress)
+        target_callback = callback or self.progress_callback
+        if target_callback:
+            try:
+                target_callback(status, progress)
+            except Exception:
+                pass
     
     def load_model(self) -> bool:
         """
-        Load TTS model (downloads if not present)
-        
-        Returns:
-            bool: True if model loaded successfully
+        Load TTS model (VieNeu-TTS)
         """
         try:
             self._update_progress("Checking model files...", 0.1)
             
-            # Check if model exists
-            required_files = [
-                "config.yaml",
-                "speech_embedding.onnx",
-                "speech_tokenizer.onnx",
-                "llm.pt",
-                "flow.pt",
-                "hift.pt"
-            ]
-            
             model_dir = Config.MODEL_DIR
-            files_exist = model_dir.exists() and all(
-                (model_dir / f).exists() for f in required_files
-            )
             
-            if not files_exist:
-                self._update_progress("Downloading model from HuggingFace...", 0.2)
-                logger.info("Model not found, downloading from HuggingFace...")
-                self._download_model()
+            if not (model_dir / "model.safetensors").exists():
+                 logger.error(f"Model file not found at {model_dir}")
+                 raise ModelNotFoundError(f"Model not found at {model_dir}")
+
+            self._update_progress("Initializing VieNeu-TTS Engine...", 0.3)
+            logger.info(f"Loading VieNeu-TTS model from {model_dir}")
             
-            self._update_progress("Loading TTS model...", 0.5)
-            logger.info("Loading TTS model...")
+            self.engine = VieNeuEngine(str(model_dir))
             
-            # Import viettts here to avoid loading at startup
-            from viettts.tts import TTS
-            
-            self.tts = TTS(
-                model_dir=str(model_dir),
-                load_jit=Config.LOAD_JIT,
-                load_onnx=Config.LOAD_ONNX
-            )
+            # Initialize (loads transformers backbone and ONNX codec)
+            # Default to GPU if available
+            self.engine.initialize(prefer_gpu=Config.PREFER_GPU)
             
             self.model_loaded = True
-            self._update_progress("Model loaded successfully!", 1.0)
-            logger.success("TTS model loaded successfully")
             
-            # Load available voices
+            # Load preset voices
             self._load_voices()
             
+            self._update_progress("Model loaded successfully!", 1.0)
+            logger.success("VieNeu-TTS Engine loaded successfully")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to load model: {e}")
+            logger.error(f"Failed to load engine: {e}")
             self.model_loaded = False
             raise ModelDownloadError(f"Failed to load model: {str(e)}")
     
-    def _download_model(self):
-        """Download model from HuggingFace"""
-        try:
-            from huggingface_hub import snapshot_download
-            
-            snapshot_download(
-                repo_id="dangvansam/viet-tts",
-                local_dir=str(Config.MODEL_DIR)
-            )
-            logger.success("Model downloaded successfully")
-            
-        except Exception as e:
-            logger.error(f"Model download failed: {e}")
-            raise ModelDownloadError(f"Download failed: {str(e)}")
-    
     def _load_voices(self):
-        """Load available voice samples"""
-        samples_dir = Config.SAMPLES_DIR
+        """Load available voices (presets from samples folder + cloning)"""
+        self.voices.clear()
         
+        # 1. Load Presets from samples folder
+        samples_dir = Config.MODEL_DIR / "samples"
         if samples_dir.exists():
-            for ext in ['*.wav', '*.mp3']:
-                for f in samples_dir.glob(ext):
-                    voice_name = f.stem
-                    self.voices[voice_name] = str(f)
+            # VieNeu-TTS samples usually come as .wav + .txt + .pt
+            wav_files = list(samples_dir.glob("*.wav"))
+            for wav_path in wav_files:
+                voice_name = wav_path.stem
+                txt_path = wav_path.with_suffix(".txt")
+                pt_path = wav_path.with_suffix(".pt")
+                
+                ref_text = ""
+                if txt_path.exists():
+                    ref_text = txt_path.read_text(encoding="utf-8").strip()
+                
+                codes = []
+                if pt_path.exists() and self.engine:
+                    codes = self.engine.load_preencoded(str(pt_path))
+                
+                self.voices[voice_name] = {
+                    "type": "preset",
+                    "path": str(wav_path.absolute()),
+                    "ref_text": ref_text,
+                    "codes": codes
+                }
+            logger.info(f"Loaded {len(wav_files)} preset voices")
         
-        logger.info(f"Loaded {len(self.voices)} voice samples")
+        # 2. Add samples from app samples dir (for cloning)
+        app_samples_dir = Config.SAMPLES_DIR
+        if app_samples_dir.exists():
+            for ext in ['*.wav', '*.mp3']:
+                for f in app_samples_dir.glob(ext):
+                    voice_name = f"Clone: {f.stem}"
+                    if voice_name not in self.voices:
+                        self.voices[voice_name] = {
+                            "type": "clone",
+                            "path": str(f.absolute()),
+                            "ref_text": "", # Needs to be provided by user or detected
+                            "codes": []
+                        }
+        
+        logger.info(f"Total voices available: {len(self.voices)}")
     
     def get_available_voices(self) -> dict:
-        """
-        Get list of available voices
-        
-        Returns:
-            dict: {voice_name: voice_path}
-        """
-        return self.voices.copy()
+        # Return just names for the UI dropdown
+        return {name: data["path"] for name, data in self.voices.items()}
     
     def reload_voices(self):
-        """Reload voice samples from directory"""
-        self.voices.clear()
         self._load_voices()
-    
-    def load_voice_from_file(self, filepath: str) -> torch.Tensor:
-        """
-        Load and process voice sample from file for cloning
-        
-        Args:
-            filepath: Path to audio file (mp3/wav)
-            
-        Returns:
-            torch.Tensor: Processed voice tensor (16kHz)
-        """
-        from viettts.utils.file_utils import load_prompt_speech_from_file
-        
-        if not os.path.exists(filepath):
-            raise VoiceFileError(f"Voice file not found: {filepath}")
-        
-        # Check file extension
-        ext = Path(filepath).suffix.lower()
-        if ext not in ['.wav', '.mp3', '.mp4', '.m4a']:
-            raise VoiceFileError(f"Unsupported audio format: {ext}")
-        
-        try:
-            voice_tensor = load_prompt_speech_from_file(
-                filepath=filepath,
-                min_duration=Config.MIN_VOICE_DURATION,
-                max_duration=Config.MAX_VOICE_DURATION
-            )
-            return voice_tensor
-            
-        except Exception as e:
-            logger.error(f"Failed to load voice file: {e}")
-            raise VoiceFileError(f"Failed to process voice file: {str(e)}")
-    
+
     def synthesize(
         self,
         text: str,
-        voice_path: str,
+        voice_name: str, 
         speed: float = 1.0,
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        progress_callback: Optional[Callable] = None
     ) -> np.ndarray:
         """
-        Synthesize speech from text
-        
-        Args:
-            text: Vietnamese text to synthesize
-            voice_path: Path to voice sample file
-            speed: Speech speed (0.5-2.0)
-            output_path: Optional path to save audio file
-            
-        Returns:
-            np.ndarray: Audio waveform
+        Synthesize speech
         """
-        if not self.model_loaded:
-            raise ModelNotFoundError("Model not loaded. Call load_model() first.")
+        if not self.model_loaded or not self.engine:
+            raise ModelNotFoundError("Model not loaded.")
         
         if not text or not text.strip():
             raise EmptyTextError()
-        
-        # Validate speed
-        speed = max(Config.MIN_SPEED, min(Config.MAX_SPEED, speed))
-        
+            
         try:
-            # Load voice
-            self._update_progress("Loading voice sample...", 0.1)
-            prompt_speech_16k = self.load_voice_from_file(voice_path)
+            self._update_progress("Preparing synthesis...", 0.1, progress_callback)
             
-            # Synthesize
-            self._update_progress("Generating speech...", 0.3)
-            start_time = time.perf_counter()
+            # Find voice data
+            # voice_name is the key in self.voices
+            voice_data = self.voices.get(voice_name)
+            if not voice_data:
+                # Try finding by path if name not found (for direct calls)
+                for v_name, v_data in self.voices.items():
+                    if v_data["path"] == voice_name:
+                        voice_data = v_data
+                        break
             
-            wav = self.tts.tts_to_wav(
+            if not voice_data:
+                logger.warning(f"Voice '{voice_name}' not found, using first available")
+                if self.voices:
+                    voice_data = list(self.voices.values())[0]
+                else:
+                    raise VoiceFileError("No voices available")
+
+            ref_codes = voice_data.get("codes", [])
+            ref_text = voice_data.get("ref_text", "")
+            ref_path = voice_data.get("path", "")
+            
+            # If codes are missing, encode them now
+            if not ref_codes and ref_path:
+                self._update_progress("Encoding reference voice...", 0.2, progress_callback)
+                ref_codes = self.engine.encode_reference(ref_path)
+                voice_data["codes"] = ref_codes # Cache for next time
+            
+            # If ref_text is missing (for clones), we might need a default or user input
+            # For now, use a generic prompt if empty
+            if not ref_text:
+                ref_text = "Thành phố Hồ Chí Minh là trung tâm kinh tế lớn nhất Việt Nam."
+                logger.warning(f"Reference text missing for {voice_name}, using default: {ref_text}")
+
+            self._update_progress("Synthesizing (VieNeu-TTS)...", 0.4, progress_callback)
+            
+            # Call Engine
+            audio = self.engine.synthesize(
                 text=text,
-                prompt_speech_16k=prompt_speech_16k,
+                ref_codes=ref_codes,
+                ref_text=ref_text,
                 speed=speed
             )
             
-            elapsed = time.perf_counter() - start_time
-            logger.info(f"Synthesis completed in {elapsed:.2f}s")
-            
-            # Save to file if output path provided
+            # Save if needed
             if output_path:
-                self._update_progress("Saving audio file...", 0.9)
-                self._save_audio(wav, output_path)
+                self._update_progress("Saving...", 0.9, progress_callback)
+                self._save_audio(audio, output_path)
+                
+            self._update_progress("Done!", 1.0, progress_callback)
+            return audio
             
-            self._update_progress("Done!", 1.0)
-            return wav
-            
-        except EmptyTextError:
-            raise
-        except VoiceFileError:
-            raise
         except Exception as e:
             logger.error(f"Synthesis failed: {e}")
-            raise InferenceError(f"Synthesis failed: {str(e)}")
-    
-    def _save_audio(
-        self,
-        wav: np.ndarray,
-        output_path: str,
-        sample_rate: int = None
-    ):
-        """Save audio array to file"""
+            raise InferenceError(str(e))
+
+    def _save_audio(self, wav: np.ndarray, output_path: str):
         import soundfile as sf
-        
-        if sample_rate is None:
-            sample_rate = Config.OUTPUT_SAMPLE_RATE
-        
-        # Ensure output directory exists
+        # VieNeu-TTS outputs 24kHz
+        sample_rate = 24000
+            
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        
         sf.write(output_path, wav, sample_rate)
-        logger.info(f"Audio saved to: {output_path}")
-    
+
     def synthesize_batch(
         self,
         texts: list,
-        voice_path: str,
+        voice_name: str,
         output_dir: str,
         speed: float = 1.0,
         progress_callback: Optional[Callable] = None,
         cancel_flag: Optional[Callable] = None
     ) -> list:
-        """
-        Synthesize multiple texts (for SRT processing)
-        
-        Args:
-            texts: List of (index, text) tuples to synthesize
-            voice_path: Path to voice sample
-            output_dir: Directory to save output files
-            speed: Speech speed
-            progress_callback: Callback for progress updates (idx, total, status)
-            cancel_flag: Callable that returns True to cancel
-            
-        Returns:
-            list: List of output file paths
-        """
-        if not self.model_loaded:
-            raise ModelNotFoundError()
-        
-        # Load voice once
-        prompt_speech_16k = self.load_voice_from_file(voice_path)
+        """Batch synthesis for SRT"""
+        if not self.model_loaded: raise ModelNotFoundError()
         
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
-        output_files = []
+        files = []
         total = len(texts)
         
-        for current_idx, item in enumerate(texts, start=1):
-            # Handle both (index, text) tuples and plain text strings
-            if isinstance(item, tuple):
-                file_idx, text = item
-            else:
-                file_idx, text = current_idx, item
+        # Pre-load voice data
+        voice_data = self.voices.get(voice_name)
+        if not voice_data:
+            voice_data = list(self.voices.values())[0]
             
-            # Check for cancellation
-            if cancel_flag and cancel_flag():
-                logger.info("Batch synthesis cancelled")
-                break
+        ref_codes = voice_data.get("codes", [])
+        ref_text = voice_data.get("ref_text", "")
+        if not ref_codes:
+            ref_codes = self.engine.encode_reference(voice_data["path"])
+        if not ref_text:
+            ref_text = "Chào mừng bạn đến với ứng dụng chuyển đổi văn bản thành giọng nói."
+
+        for idx, item in enumerate(texts, 1):
+            if cancel_flag and cancel_flag(): break
             
-            # Update progress
+            if isinstance(item, tuple): f_idx, txt = item
+            else: f_idx, txt = idx, item
+            
             if progress_callback:
-                progress_callback(current_idx, total, f"Processing {current_idx}/{total}...")
-            
+                progress_callback(idx, total, f"Processing {idx}/{total}...")
+                
             try:
-                if text and text.strip():
-                    # Synthesize
-                    wav = self.tts.tts_to_wav(
-                        text=text,
-                        prompt_speech_16k=prompt_speech_16k,
-                        speed=speed
-                    )
-                    
-                    # Save with subtitle index name
-                    output_path = output_dir / f"{file_idx}.{Config.SRT_OUTPUT_FORMAT}"
-                    self._save_audio(wav, str(output_path))
-                    output_files.append(str(output_path))
-                else:
-                    logger.warning(f"Skipping empty text at index {file_idx}")
-                    
+                if not txt.strip(): continue
+                
+                audio = self.engine.synthesize(
+                    text=txt,
+                    ref_codes=ref_codes,
+                    ref_text=ref_text,
+                    speed=speed
+                )
+                
+                out_path = output_dir / f"{f_idx}.wav"
+                self._save_audio(audio, str(out_path))
+                files.append(str(out_path))
+                
             except Exception as e:
-                logger.error(f"Failed to synthesize text {file_idx}: {e}")
+                logger.error(f"Error on item {f_idx}: {e}")
                 continue
-        
-        return output_files
-    
+                
+        return files
+
     def get_audio_duration(self, filepath: str) -> float:
-        """Get duration of audio file in seconds"""
         import librosa
-        
         try:
-            duration = librosa.get_duration(path=filepath)
-            return duration
-        except Exception as e:
-            logger.error(f"Failed to get audio duration: {e}")
+            return librosa.get_duration(path=filepath)
+        except:
             return 0.0
-    
+
     def cleanup(self):
-        """Cleanup resources"""
-        self.tts = None
+        self.engine = None
         self.model_loaded = False
-        torch.cuda.empty_cache() if torch.cuda.is_available() else None
-        logger.info("TTS Engine cleaned up")
+        self.device_manager.empty_cache()
+
+    def get_device_info(self):
+        return self.device_manager.get_device_info()
