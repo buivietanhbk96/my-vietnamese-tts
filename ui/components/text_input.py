@@ -28,6 +28,7 @@ class TextInputPanel(ThemedFrame):
         
         self._create_widgets()
         self._setup_layout()
+        self.bind_focus_in()
     
     def _create_widgets(self):
         """Create panel widgets"""

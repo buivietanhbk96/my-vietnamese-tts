@@ -251,10 +251,8 @@ class TTSWorker:
         if not self.tts_engine:
             raise RuntimeError("TTS engine not set")
         
-        # Validate voice file exists
-        voice_path = params["voice_path"]
-        if not os.path.exists(voice_path):
-            raise FileNotFoundError(f"Voice file not found: {voice_path}")
+        # voice_path is actually the voice name/key for lookup in TTSEngine.voices
+        voice_name = params["voice_path"]
         
         # Progress callback wrapper
         def progress_wrapper(status, progress):
@@ -263,7 +261,7 @@ class TTSWorker:
         
         wav = self.tts_engine.synthesize(
             text=params["text"],
-            voice_path=voice_path,
+            voice_name=voice_name,  # Use voice_name parameter (matches TTSEngine.synthesize signature)
             speed=params["speed"],
             output_path=params["output_path"],
             progress_callback=progress_wrapper
@@ -277,7 +275,7 @@ class TTSWorker:
             raise RuntimeError("TTS engine not set")
         
         texts = params["texts"]
-        voice_path = params["voice_path"]
+        voice_name = params["voice_path"]  # Actually voice name for lookup
         output_dir = params["output_dir"]
         speed = params["speed"]
         
@@ -292,7 +290,7 @@ class TTSWorker:
         
         return self.tts_engine.synthesize_batch(
             texts=texts,  # Pass full (index, text) tuples
-            voice_path=voice_path,
+            voice_name=voice_name,  # Use voice_name parameter
             output_dir=output_dir,
             speed=speed,
             progress_callback=progress_wrapper,

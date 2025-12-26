@@ -235,7 +235,7 @@ class SRTProcessor:
     
     def process(
         self,
-        voice_path: str,
+        voice_name: str,
         output_dir: str,
         speed: float = 1.0,
         start_index: int = 1,
@@ -247,7 +247,7 @@ class SRTProcessor:
         Process subtitles and generate audio files
         
         Args:
-            voice_path: Path to voice sample
+            voice_name: Voice name/key for TTSEngine lookup
             output_dir: Directory for output files
             speed: Speech speed
             start_index: Start from this subtitle index
@@ -279,41 +279,18 @@ class SRTProcessor:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Load voice once
-        prompt_speech = self.tts_engine.load_voice_from_file(voice_path)
+        # Build texts list for batch processing
+        texts = [(sub.index, sub.text) for sub in subs_to_process if sub.text.strip()]
         
-        generated_files = []
-        total = len(subs_to_process)
-        
-        for i, sub in enumerate(subs_to_process, start=1):
-            # Check cancellation
-            if cancel_flag and cancel_flag():
-                logger.info("SRT processing cancelled")
-                break
-            
-            # Progress callback
-            if progress_callback:
-                progress_callback(i, total, f"Generating {sub.index}/{total}: {sub.text[:30]}...")
-            
-            try:
-                if sub.text:
-                    # Generate audio
-                    wav = self.tts_engine.tts.tts_to_wav(
-                        text=sub.text,
-                        prompt_speech_16k=prompt_speech,
-                        speed=speed
-                    )
-                    
-                    # Save with subtitle index as filename
-                    output_path = output_dir / f"{sub.index}.wav"
-                    self.tts_engine._save_audio(wav, str(output_path))
-                    generated_files.append(str(output_path))
-                    
-                    logger.info(f"Generated: {output_path}")
-                    
-            except Exception as e:
-                logger.error(f"Failed to process subtitle {sub.index}: {e}")
-                continue
+        # Use TTSEngine's batch synthesis
+        generated_files = self.tts_engine.synthesize_batch(
+            texts=texts,
+            voice_name=voice_name,
+            output_dir=str(output_dir),
+            speed=speed,
+            progress_callback=progress_callback,
+            cancel_flag=cancel_flag
+        )
         
         logger.success(f"Generated {len(generated_files)} audio files")
         return generated_files

@@ -138,6 +138,11 @@ class WaveformViewer(tk.Canvas):
         sample_rate: int = 22050
     ) -> None:
         """Load audio data để hiển thị"""
+        # Validate input
+        if len(audio_data) == 0 or sample_rate <= 0:
+            self.clear()
+            return
+        
         # Ensure mono
         if len(audio_data.shape) > 1:
             audio_data = np.mean(audio_data, axis=1)
@@ -233,7 +238,7 @@ class WaveformViewer(tk.Canvas):
     
     def zoom_selection(self) -> None:
         """Zoom vào vùng chọn"""
-        if self._audio_data is None or self._selection.length == 0:
+        if self._audio_data is None or len(self._audio_data) == 0 or self._selection.length == 0:
             return
         
         total_samples = len(self._audio_data)
@@ -310,7 +315,7 @@ class WaveformViewer(tk.Canvas):
     
     def _pixel_to_sample(self, x: int) -> int:
         """Chuyển pixel x sang sample index"""
-        if self._audio_data is None:
+        if self._audio_data is None or len(self._audio_data) == 0:
             return 0
         
         width = self.winfo_width()
@@ -323,7 +328,7 @@ class WaveformViewer(tk.Canvas):
     
     def _sample_to_pixel(self, sample: int) -> int:
         """Chuyển sample index sang pixel x"""
-        if self._audio_data is None:
+        if self._audio_data is None or len(self._audio_data) == 0:
             return 0
         
         width = self.winfo_width()
@@ -339,7 +344,7 @@ class WaveformViewer(tk.Canvas):
     
     def _compute_waveform(self) -> np.ndarray:
         """Tính toán waveform để vẽ"""
-        if self._audio_data is None:
+        if self._audio_data is None or len(self._audio_data) == 0:
             return np.array([])
         
         width = self.winfo_width()

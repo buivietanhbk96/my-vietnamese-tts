@@ -37,10 +37,11 @@ pip install onnxruntime-directml>=1.19.0
 
 :: Install VieNeu-TTS dependencies
 echo [5/5] Installing VieNeu-TTS dependencies...
-pip install torch>=2.3.0 torchaudio>=2.3.0
+pip install torch>=2.3.0 torchaudio>=2.3.0 torch-directml>=0.2.0
 pip install transformers librosa soundfile "numpy<2.4"
 pip install huggingface_hub pyyaml loguru rich addict accelerate
-pip install onnx onnxsim neucodec phonemizer
+pip install onnx onnxsim neucodec phonemizer noisereduce
+pip install customtkinter pygame psutil scipy pydub requests
 
 :: Check for eSpeak NG
 echo.

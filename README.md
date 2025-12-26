@@ -13,12 +13,34 @@
 
 ## 🚀 Quick Start
 
-### Requirements
-- **Python 3.10+**
-- **Windows 10/11**
-- **FFmpeg** (Recommended)
-- **eSpeak NG** (Mandatory for full phonemization accuracy)
-  - [Download eSpeak-NG](https://github.com/espeak-ng/espeak-ng/releases)
+### System Requirements
+- **OS:** Windows 10/11 (64-bit)
+- **CPU:** AMD Ryzen 2700X or equivalent (multi-core recommended)
+- **RAM:** 16GB minimum, 48GB recommended
+- **GPU:** AMD RX6600 or compatible DirectML GPU
+- **Python:** 3.10 or higher
+
+### Prerequisites
+
+#### 1. eSpeak-NG (Required for phonemization)
+
+Download and install from: [eSpeak-NG Releases](https://github.com/espeak-ng/espeak-ng/releases)
+
+**Windows Installation:**
+1. Download `espeak-ng-X64.msi` (latest version)
+2. Run the installer with default settings
+3. Default path should be: `C:\Program Files\eSpeak NG\`
+
+> ⚠️ **Important:** The app will still work without eSpeak but phonemization quality may be reduced.
+
+#### 2. FFmpeg (Recommended)
+
+Download and install from: [FFmpeg Downloads](https://ffmpeg.org/download.html)
+
+**Windows Installation:**
+1. Download `ffmpeg-release-full.7z` from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)
+2. Extract to `C:\ffmpeg`
+3. Add `C:\ffmpeg\bin` to your PATH environment variable
 
 ### Installation
 

@@ -15,12 +15,12 @@ import os
 # Import internal modules
 try:
     from app.waveform_viewer import WaveformViewer, WaveformToolbar, WaveformStyle
-    from app.audio_processor import AudioPostProcessor, ProcessingPreset
+    from app.audio_processor import AudioProcessor, AudioSettings
     from app.preset_manager import get_preset_manager, AudioPreset
 except ImportError:
     # Fallback for development
     from waveform_viewer import WaveformViewer, WaveformToolbar, WaveformStyle
-    from audio_processor import AudioPostProcessor, ProcessingPreset
+    from audio_processor import AudioProcessor, AudioSettings
     from preset_manager import get_preset_manager, AudioPreset
 
 
@@ -55,7 +55,9 @@ class AudioPanelPro(ctk.CTkFrame):
     
     def _init_audio_processor(self):
         """Initialize audio processor"""
-        self.audio_processor = AudioPostProcessor(sample_rate=22050)
+        # AudioProcessor requires AudioSettings, not sample_rate directly
+        settings = AudioSettings(sample_rate=22050)
+        self.audio_processor = AudioProcessor(settings)
     
     def _init_preset_manager(self):
         """Initialize preset manager"""
@@ -186,17 +188,8 @@ class AudioPanelPro(ctk.CTkFrame):
             width=100
         ).pack(side="left")
         
-        # Limiter section
-        limiter_frame = ctk.CTkFrame(controls_frame, fg_color="transparent")
-        limiter_frame.pack(side="left", padx=10, pady=5)
-        
-        self.limiter_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(
-            limiter_frame,
-            text="Limiter",
-            variable=self.limiter_var,
-            width=80
-        ).pack(side="left")
+        # Note: Limiter not currently supported by AudioProcessor
+        # Future: Add limiter functionality to AudioProcessor for peak limiting
         
         # Process button
         self.process_btn = ctk.CTkButton(
@@ -263,7 +256,7 @@ class AudioPanelPro(ctk.CTkFrame):
         self.noise_reduction_var.set(preset.noise_reduction_enabled)
         self.noise_strength_var.set(preset.noise_reduction_strength)
         self.compression_var.set(preset.compression_enabled)
-        self.limiter_var.set(preset.limiter_enabled)
+        # Note: limiter not supported by AudioProcessor
     
     def load_audio(self, audio_data: np.ndarray, sample_rate: int = 22050):
         """Load audio data để hiển thị và xử lý"""
@@ -306,43 +299,31 @@ class AudioPanelPro(ctk.CTkFrame):
         
         def process():
             try:
-                # Get settings
+                # Get settings from UI
                 normalize = self.normalize_var.get()
                 target_db = float(self.norm_level_var.get())
                 noise_reduce = self.noise_reduction_var.get()
                 noise_strength = self.noise_strength_var.get()
                 compress = self.compression_var.get()
-                limit = self.limiter_var.get()
                 
-                # Process
-                processed = self._audio_data.copy()
+                # Create AudioSettings with user preferences
+                settings = AudioSettings(
+                    sample_rate=self._sample_rate,
+                    normalize=normalize,
+                    target_peak=target_db,
+                    noise_reduction=noise_reduce,
+                    noise_reduction_strength=noise_strength,
+                    apply_compression=compress,
+                    trim_silence=False,  # Don't auto-trim in pro panel
+                    add_padding=0,
+                )
                 
-                if noise_reduce:
-                    processed = self.audio_processor.noise_reducer.reduce_spectral(
-                        processed,
-                        strength=noise_strength
-                    )
-                
-                if normalize:
-                    processed = self.audio_processor.normalizer.normalize_peak(
-                        processed,
-                        target_db=target_db
-                    )
-                
-                if compress:
-                    processed = self.audio_processor.dynamic_processor.compress(
-                        processed,
-                        threshold_db=-20.0,
-                        ratio=4.0
-                    )
-                
-                if limit:
-                    processed = self.audio_processor.dynamic_processor.limit(
-                        processed,
-                        threshold_db=-1.0
-                    )
-                
-                self._processed_audio = processed
+                # Create processor with settings and process
+                processor = AudioProcessor(settings)
+                self._processed_audio, _ = processor.process(
+                    self._audio_data.copy(),
+                    self._sample_rate
+                )
                 
                 # Update UI on main thread
                 self.after(0, self._on_processing_complete)

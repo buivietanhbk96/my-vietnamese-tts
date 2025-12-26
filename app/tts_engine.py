@@ -10,7 +10,7 @@ import json
 import numpy as np
 import torch
 from pathlib import Path
-from typing import Optional, Generator, Callable, Union, Dict
+from typing import Optional, Generator, Callable, Union, Dict, List, Any
 from loguru import logger
 
 from app.config import Config
@@ -24,17 +24,20 @@ from app.exceptions import (
     EmptyTextError
 )
 
+
 class TTSEngine:
     """
-    VieNeu-TTS Engine wrapper
-    Provides interface for TTS synthesis and voice cloning
+    VieNeu-TTS Engine wrapper.
+    
+    Provides high-level interface for TTS synthesis and voice cloning
+    with GPU acceleration support (DirectML for AMD GPUs).
     """
     
-    def __init__(self, progress_callback: Optional[Callable] = None):
-        self.progress_callback = progress_callback
+    def __init__(self, progress_callback: Optional[Callable[[str, float], None]] = None) -> None:
+        self.progress_callback: Optional[Callable[[str, float], None]] = progress_callback
         self.engine: Optional[VieNeuEngine] = None
-        self.model_loaded = False
-        self.voices: Dict[str, dict] = {} # Name -> {type, path, ref_text, codes}
+        self.model_loaded: bool = False
+        self.voices: Dict[str, Dict[str, Any]] = {}  # Name -> {type, path, ref_text, codes}
         self.device_manager = get_device_manager()
         
         # Ensure directories
@@ -42,8 +45,13 @@ class TTSEngine:
         
         logger.info(f"TTS Engine initialized. Device manager: {self.device_manager.device_name}")
     
-    def _update_progress(self, status: str, progress: float = 0, callback: Optional[Callable] = None):
-        """Send progress update through callback"""
+    def _update_progress(
+        self, 
+        status: str, 
+        progress: float = 0, 
+        callback: Optional[Callable[[str, float], None]] = None
+    ) -> None:
+        """Send progress update through callback."""
         target_callback = callback or self.progress_callback
         if target_callback:
             try:
@@ -53,7 +61,14 @@ class TTSEngine:
     
     def load_model(self) -> bool:
         """
-        Load TTS model (VieNeu-TTS)
+        Load TTS model (VieNeu-TTS).
+        
+        Returns:
+            bool: True if model loaded successfully
+            
+        Raises:
+            ModelNotFoundError: If model files not found
+            ModelDownloadError: If model loading fails
         """
         try:
             self._update_progress("Checking model files...", 0.1)
@@ -61,8 +76,8 @@ class TTSEngine:
             model_dir = Config.MODEL_DIR
             
             if not (model_dir / "model.safetensors").exists():
-                 logger.error(f"Model file not found at {model_dir}")
-                 raise ModelNotFoundError(f"Model not found at {model_dir}")
+                logger.error(f"Model file not found at {model_dir}")
+                raise ModelNotFoundError(f"Model not found at {model_dir}")
 
             self._update_progress("Initializing VieNeu-TTS Engine...", 0.3)
             logger.info(f"Loading VieNeu-TTS model from {model_dir}")
@@ -72,6 +87,12 @@ class TTSEngine:
             # Initialize (loads transformers backbone and ONNX codec)
             # Default to GPU if available
             self.engine.initialize(prefer_gpu=Config.PREFER_GPU)
+            
+            # Log GPU status
+            if self.engine.is_using_gpu:
+                logger.success("✅ GPU acceleration enabled for audio decoding")
+            else:
+                logger.info("Running on CPU (GPU acceleration not available)")
             
             self.model_loaded = True
             
@@ -87,8 +108,8 @@ class TTSEngine:
             self.model_loaded = False
             raise ModelDownloadError(f"Failed to load model: {str(e)}")
     
-    def _load_voices(self):
-        """Load available voices (presets from samples folder + cloning)"""
+    def _load_voices(self) -> None:
+        """Load available voices (presets from samples folder + cloning)."""
         self.voices.clear()
         
         # 1. Load Presets from samples folder
@@ -282,16 +303,53 @@ class TTSEngine:
         return files
 
     def get_audio_duration(self, filepath: str) -> float:
+        """Get duration of an audio file in seconds."""
         import librosa
         try:
             return librosa.get_duration(path=filepath)
-        except:
+        except Exception:
             return 0.0
 
-    def cleanup(self):
+    def cleanup(self) -> None:
+        """Release all resources and clear GPU memory."""
+        if self.engine:
+            self.engine.cleanup()
         self.engine = None
         self.model_loaded = False
         self.device_manager.empty_cache()
+        logger.info("TTS Engine resources cleaned up")
 
-    def get_device_info(self):
+    def get_device_info(self) -> Dict[str, Any]:
+        """Get device/hardware information."""
         return self.device_manager.get_device_info()
+    
+    def get_gpu_status(self) -> Dict[str, Any]:
+        """
+        Get detailed GPU acceleration status.
+        
+        Returns:
+            Dict with GPU status information including:
+            - codec_using_gpu: Whether codec is GPU accelerated
+            - codec_provider: Active ONNX provider
+            - directml_available: Whether DirectML is available
+            - device_name: Name of the compute device
+        """
+        if self.engine:
+            return self.engine.get_gpu_status()
+        return {
+            "codec_using_gpu": False,
+            "codec_provider": "Not loaded",
+            "directml_available": self.device_manager.is_directml_available,
+            "device_name": self.device_manager.device_name,
+        }
+    
+    def get_memory_info(self) -> Dict[str, Any]:
+        """
+        Get memory usage information.
+        
+        Useful for monitoring system and GPU memory usage,
+        especially on AMD RX6600 with limited VRAM.
+        """
+        if self.engine:
+            return self.engine.get_memory_info()
+        return {"error": "Engine not loaded"}

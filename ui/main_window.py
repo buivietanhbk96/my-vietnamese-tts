@@ -1,11 +1,21 @@
 """
 Main Window for VietTTS Desktop Application
+
+Keyboard Shortcuts:
+    Ctrl+Enter  - Generate speech
+    Ctrl+S      - Save current audio
+    Ctrl+O      - Open SRT file
+    Ctrl+P      - Play/Pause audio
+    Space       - Play/Pause audio (when audio panel focused)
+    Escape      - Stop audio playback
+    F5          - Refresh voices
+    Ctrl+Q      - Quit application
 """
 
 import os
 import customtkinter as ctk
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Callable
 from datetime import datetime
 from tkinter import messagebox
 from loguru import logger
@@ -35,6 +45,17 @@ class MainWindow(ctk.CTk):
     """
     Main application window for VietTTS
     """
+    
+    # Keyboard shortcut definitions
+    SHORTCUTS: Dict[str, str] = {
+        "<Control-Return>": "Generate speech",
+        "<Control-s>": "Save audio",
+        "<Control-o>": "Open SRT file",
+        "<Control-p>": "Play/Pause",
+        "<Escape>": "Stop playback",
+        "<F5>": "Refresh voices",
+        "<Control-q>": "Quit",
+    }
     
     def __init__(self):
         super().__init__()
@@ -85,6 +106,9 @@ class MainWindow(ctk.CTk):
             # Create UI
             self.splash.update_progress(0.8, "Creating interface...")
             self._create_ui()
+            
+            # Setup keyboard shortcuts
+            self._setup_keyboard_shortcuts()
             
             # Load saved settings
             self.splash.update_progress(0.9, "Loading settings...")
@@ -167,6 +191,71 @@ class MainWindow(ctk.CTk):
         # Initialize SRT processor
         self.srt_processor = SRTProcessor(self.tts_engine)
     
+    def _setup_keyboard_shortcuts(self) -> None:
+        """Setup keyboard shortcuts for the application."""
+        # Generate speech: Ctrl+Enter
+        self.bind("<Control-Return>", lambda e: self._on_generate())
+        
+        # Save audio: Ctrl+S
+        self.bind("<Control-s>", lambda e: self._on_shortcut_save())
+        
+        # Play/Pause: Ctrl+P
+        self.bind("<Control-p>", lambda e: self._on_shortcut_play_pause())
+        
+        # Stop playback: Escape
+        self.bind("<Escape>", lambda e: self._on_shortcut_stop())
+        
+        # Refresh voices: F5
+        self.bind("<F5>", lambda e: self._on_shortcut_refresh())
+        
+        # Quit: Ctrl+Q
+        self.bind("<Control-q>", lambda e: self.on_closing())
+        
+        # Show shortcuts help: F1
+        self.bind("<F1>", lambda e: self._show_shortcuts_help())
+        
+        logger.info("Keyboard shortcuts configured")
+    
+    def _on_shortcut_save(self) -> None:
+        """Handle Ctrl+S shortcut to save audio."""
+        if hasattr(self, 'audio_panel') and self.current_output_file:
+            self.audio_panel._on_save()
+    
+    def _on_shortcut_play_pause(self) -> None:
+        """Handle Ctrl+P shortcut for play/pause."""
+        if hasattr(self, 'audio_panel'):
+            self.audio_panel._on_play_pause()
+    
+    def _on_shortcut_stop(self) -> None:
+        """Handle Escape shortcut to stop playback."""
+        if hasattr(self, 'audio_panel'):
+            self.audio_panel._on_stop()
+    
+    def _on_shortcut_refresh(self) -> None:
+        """Handle F5 shortcut to refresh voices."""
+        if self.tts_engine:
+            self.tts_engine.reload_voices()
+            voices = self.tts_engine.get_available_voices()
+            if hasattr(self, 'voice_panel'):
+                self.voice_panel.set_voices(voices)
+            if hasattr(self, 'srt_voice_panel'):
+                self.srt_voice_panel.set_voices(voices)
+            self.status_bar.set_success("Voices refreshed")
+    
+    def _show_shortcuts_help(self) -> None:
+        """Show keyboard shortcuts help dialog."""
+        shortcuts_text = """Keyboard Shortcuts:
+
+Ctrl+Enter  - Generate speech from text
+Ctrl+S      - Save current audio file
+Ctrl+P      - Play/Pause audio
+Escape      - Stop audio playback
+F5          - Refresh voice list
+Ctrl+Q      - Quit application
+F1          - Show this help"""
+        
+        messagebox.showinfo("Keyboard Shortcuts", shortcuts_text)
+
     def _create_ui(self):
         """Create main UI layout"""
         # Configure grid

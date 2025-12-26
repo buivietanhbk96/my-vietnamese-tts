@@ -118,6 +118,9 @@ except Exception as e:
 def phonemize_text(text: str) -> str:
     """Convert text to phonemes using phonemizer."""
     text = normalizer.normalize(text)
+    if not espeak_available:
+        logger.warning("eSpeak not available, returning normalized text")
+        return text
     return phonemize(
         text,
         language="vi",
@@ -136,7 +139,7 @@ def phonemize_with_dict(text: str, phoneme_dict=phoneme_dict) -> str:
     for word in words:
         if word in phoneme_dict:
             phone_word = phoneme_dict[word]
-        else:
+        elif espeak_available:
             try:
                 phone_word = phonemize(
                     word,
@@ -154,6 +157,9 @@ def phonemize_with_dict(text: str, phoneme_dict=phoneme_dict) -> str:
             except Exception as e:
                 print(f"Warning: Could not phonemize '{word}': {e}")
                 phone_word = word
+        else:
+            # eSpeak not available, use word as-is
+            phone_word = word
         
         result.append(phone_word)
     
