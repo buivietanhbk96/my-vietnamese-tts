@@ -120,7 +120,7 @@ class VieNeuEngine:
             # and CPU is fast enough for the text-to-token generation
             self.backbone = AutoModelForCausalLM.from_pretrained(
                 str(self.backbone_path),
-                torch_dtype=torch.float32,
+                dtype=torch.float32,
                 device_map="cpu"
             )
             self.backbone.eval()
@@ -281,10 +281,12 @@ class VieNeuEngine:
                 max_new_tokens=self.max_context - input_len,
                 eos_token_id=speech_end_id,
                 do_sample=True,
-                temperature=1.0,
-                top_k=50,
+                temperature=0.6,        # Lower for stable output
+                top_k=30,               # Reduced for quality
+                top_p=0.9,              # Nucleus sampling
+                repetition_penalty=1.2, # Prevent degenerate sequences
                 use_cache=True,
-                min_new_tokens=20,
+                min_new_tokens=50,      # Ensure sufficient output length
             )
         
         # 5. Decode tokens to string
@@ -361,8 +363,8 @@ class VieNeuEngine:
                 logger.error("NeuCodec encoder not available")
                 return []
             
-            # Load and preprocess audio
-            wav, _ = librosa.load(wav_path, sr=16000, mono=True)
+            # Load and preprocess audio at 24kHz (native sample rate for NeuCodec)
+            wav, _ = librosa.load(wav_path, sr=24000, mono=True)
             wav_tensor = torch.from_numpy(wav).float().unsqueeze(0).unsqueeze(0)
             
             # Encode
@@ -399,16 +401,19 @@ class VieNeuEngine:
             return np.zeros(0, dtype=np.float32)
         
         if progress_callback:
-            progress_callback("Generating speech tokens...", 0.3)
+            progress_callback("Phonemizing text...", 0.1)
             
         # 1. Generate tokens
         codes_str = self.get_speech_tokens(text, ref_codes, ref_text)
         
         if progress_callback:
-            progress_callback("Decoding audio...", 0.7)
+            progress_callback("Decoding audio (Codec)...", 0.6)
         
         # 2. Decode to audio (GPU accelerated)
         audio = self.decode_tokens(codes_str)
+        
+        if progress_callback:
+            progress_callback("Post-processing...", 0.85)
         
         # 3. Apply speed if not 1.0
         if speed != 1.0 and len(audio) > 0:

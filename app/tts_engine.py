@@ -86,8 +86,13 @@ class TTSEngine:
             
             # Initialize (loads transformers backbone and ONNX codec)
             # Default to GPU if available
-            self.engine.initialize(prefer_gpu=Config.PREFER_GPU)
+            success = self.engine.initialize(prefer_gpu=Config.PREFER_GPU)
             
+            if not success:
+                logger.error("Failed to initialize VieNeuEngine")
+                self.model_loaded = False
+                return False
+
             # Log GPU status
             if self.engine.is_using_gpu:
                 logger.success("✅ GPU acceleration enabled for audio decoding")
@@ -167,10 +172,19 @@ class TTSEngine:
         voice_name: str, 
         speed: float = 1.0,
         output_path: Optional[str] = None,
+        ref_text: str = "",
         progress_callback: Optional[Callable] = None
     ) -> np.ndarray:
         """
         Synthesize speech
+        
+        Args:
+            text: Text to synthesize
+            voice_name: Voice name or path for lookup
+            speed: Speech speed (0.5-2.0)
+            output_path: Optional path to save audio
+            ref_text: User-provided reference text (for voice cloning)
+            progress_callback: Progress callback function
         """
         if not self.model_loaded or not self.engine:
             raise ModelNotFoundError("Model not loaded.")
@@ -199,7 +213,6 @@ class TTSEngine:
                     raise VoiceFileError("No voices available")
 
             ref_codes = voice_data.get("codes", [])
-            ref_text = voice_data.get("ref_text", "")
             ref_path = voice_data.get("path", "")
             
             # If codes are missing, encode them now
@@ -208,20 +221,28 @@ class TTSEngine:
                 ref_codes = self.engine.encode_reference(ref_path)
                 voice_data["codes"] = ref_codes # Cache for next time
             
-            # If ref_text is missing (for clones), we might need a default or user input
-            # For now, use a generic prompt if empty
-            if not ref_text:
-                ref_text = "Thành phố Hồ Chí Minh là trung tâm kinh tế lớn nhất Việt Nam."
-                logger.warning(f"Reference text missing for {voice_name}, using default: {ref_text}")
+            # Use user-provided ref_text if available, otherwise use voice_data ref_text
+            # For cloned voices, user MUST provide ref_text for good quality
+            final_ref_text = ref_text.strip() if ref_text else voice_data.get("ref_text", "")
+            
+            if not final_ref_text:
+                logger.warning(f"Reference text missing for {voice_name}. Voice cloning quality may be poor!")
+                final_ref_text = "Xin chào, đây là một đoạn văn bản mẫu."
 
             self._update_progress("Synthesizing (VieNeu-TTS)...", 0.4, progress_callback)
+            
+            # Wrap progress callback for internal engine synthesis (maps 0-1.0 to 0.4-0.85)
+            def engine_progress_wrapper(status, progress):
+                mapped_progress = 0.4 + (progress * 0.45)
+                self._update_progress(f"Synthesizing: {status}", mapped_progress, progress_callback)
             
             # Call Engine
             audio = self.engine.synthesize(
                 text=text,
                 ref_codes=ref_codes,
-                ref_text=ref_text,
-                speed=speed
+                ref_text=final_ref_text,
+                speed=speed,
+                progress_callback=engine_progress_wrapper
             )
             
             # Save if needed

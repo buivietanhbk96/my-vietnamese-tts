@@ -169,10 +169,16 @@ class AudioPlayer:
         """Get total duration of loaded audio"""
         if self.current_file:
             try:
-                import librosa
-                return librosa.get_duration(path=self.current_file)
-            except:
-                pass
+                import soundfile as sf
+                info = sf.info(self.current_file)
+                return info.duration
+            except Exception as e:
+                logger.debug(f"Failed to get duration with soundfile: {e}")
+                try:
+                    import librosa
+                    return librosa.get_duration(path=self.current_file)
+                except:
+                    pass
         return 0.0
     
     def is_busy(self) -> bool:

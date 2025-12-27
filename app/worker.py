@@ -115,6 +115,7 @@ class TTSWorker:
         voice_path: str,
         output_path: str,
         speed: float = 1.0,
+        ref_text: str = "",
         callback: Optional[Callable] = None,
         error_callback: Optional[Callable] = None
     ):
@@ -126,6 +127,7 @@ class TTSWorker:
             voice_path: Path to voice sample
             output_path: Path to save output
             speed: Speech speed
+            ref_text: Transcript of reference audio (for voice cloning)
             callback: Success callback(output_path)
             error_callback: Error callback(error)
         """
@@ -135,7 +137,8 @@ class TTSWorker:
                 "text": text,
                 "voice_path": voice_path,
                 "output_path": output_path,
-                "speed": speed
+                "speed": speed,
+                "ref_text": ref_text
             },
             callback=callback,
             error_callback=error_callback
@@ -253,6 +256,7 @@ class TTSWorker:
         
         # voice_path is actually the voice name/key for lookup in TTSEngine.voices
         voice_name = params["voice_path"]
+        ref_text = params.get("ref_text", "")  # User-provided reference text
         
         # Progress callback wrapper
         def progress_wrapper(status, progress):
@@ -264,6 +268,7 @@ class TTSWorker:
             voice_name=voice_name,  # Use voice_name parameter (matches TTSEngine.synthesize signature)
             speed=params["speed"],
             output_path=params["output_path"],
+            ref_text=ref_text,  # Pass user-provided reference text
             progress_callback=progress_wrapper
         )
         

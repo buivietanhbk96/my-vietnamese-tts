@@ -171,7 +171,7 @@ class MainWindow(ctk.CTk):
             downloader.download_all(progress_callback=progress_callback)
     
     def _init_tts_engine(self):
-        """Initialize TTS engine"""
+        """Initialize TTS engine with non-blocking model loading"""
         def progress_callback(status: str, progress: float):
             overall_progress = 0.3 + progress * 0.5
             self.splash.update_progress(overall_progress, status)
@@ -182,11 +182,32 @@ class MainWindow(ctk.CTk):
         self.worker = TTSWorker(self.tts_engine)
         self.worker.start()
         
-        # Load model in background
-        try:
-            self.tts_engine.load_model()
-        except Exception as e:
-            logger.warning(f"Model will be downloaded on first use: {e}")
+        # Load model in a separate thread to keep splash screen responsive
+        import threading
+        load_finished = threading.Event()
+        load_error = []
+        
+        def do_load():
+            try:
+                self.tts_engine.load_model()
+            except Exception as e:
+                load_error.append(e)
+            finally:
+                load_finished.set()
+        
+        thread = threading.Thread(target=do_load, daemon=True)
+        thread.start()
+        
+        # Wait for load to finish while keeping UI responsive
+        while not load_finished.is_set():
+            self.update()
+            # Wait a bit for the thread to work, but not too long to keep UI responsive
+            load_finished.wait(0.05)
+        
+        if load_error:
+            logger.error(f"Model loading failed: {load_error[0]}")
+            # We don't raise here to allow the UI to open, 
+            # but tts_engine handles its own error states
         
         # Initialize SRT processor
         self.srt_processor = SRTProcessor(self.tts_engine)
@@ -217,19 +238,17 @@ class MainWindow(ctk.CTk):
         logger.info("Keyboard shortcuts configured")
     
     def _on_shortcut_save(self) -> None:
-        """Handle Ctrl+S shortcut to save audio."""
-        if hasattr(self, 'audio_panel') and self.current_output_file:
-            self.audio_panel._on_save()
+        """Handle Ctrl+S shortcut to open output folder."""
+        if self.settings.output_directory:
+            os.startfile(self.settings.output_directory)
     
     def _on_shortcut_play_pause(self) -> None:
-        """Handle Ctrl+P shortcut for play/pause."""
-        if hasattr(self, 'audio_panel'):
-            self.audio_panel._on_play_pause()
+        """Play/Pause removed with audio panel."""
+        pass
     
     def _on_shortcut_stop(self) -> None:
-        """Handle Escape shortcut to stop playback."""
-        if hasattr(self, 'audio_panel'):
-            self.audio_panel._on_stop()
+        """Stop playback removed with audio panel."""
+        pass
     
     def _on_shortcut_refresh(self) -> None:
         """Handle F5 shortcut to refresh voices."""
@@ -326,7 +345,6 @@ F1          - Show this help"""
         self.tab_tts.grid_rowconfigure(0, weight=1)
         self.tab_tts.grid_rowconfigure(1, weight=0)
         self.tab_tts.grid_rowconfigure(2, weight=0)
-        self.tab_tts.grid_rowconfigure(3, weight=1)
         
         # Left column - Text input
         self.text_panel = TextInputPanel(
@@ -379,13 +397,6 @@ F1          - Show this help"""
         self.tts_progress.pack(pady=5)
         self.tts_progress.set(0)
         self.tts_progress_frame.grid_remove()  # Hide initially
-        
-        # Audio player
-        self.audio_panel = AudioPlayerPanel(
-            self.tab_tts,
-            on_save=self._on_audio_save
-        )
-        self.audio_panel.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=5)
     
     def _create_srt_tab(self):
         """Create SRT import tab content"""
@@ -507,12 +518,16 @@ F1          - Show this help"""
         
         self.worker.on_progress = ProgressCallback(self, progress_callback)
         
+        # Get reference text for voice cloning (if in clone mode)
+        ref_text = self.voice_panel.get_ref_text()
+        
         # Submit to worker
         self.worker.submit_synthesize(
             text=text,
             voice_path=voice_path,
             output_path=str(output_path),
             speed=self.settings_panel.get_speed(),
+            ref_text=ref_text,  # User-provided reference text for voice cloning
             callback=ResultCallback(self, self._on_generate_complete),
             error_callback=ErrorCallback(self, self._on_generate_error)
         )
@@ -529,11 +544,18 @@ F1          - Show this help"""
         # Hide progress after delay
         self.after(2000, lambda: self.tts_progress_frame.grid_remove())
         
-        # Load into audio player
-        self.audio_panel.load_audio(output_path, auto_play=self.settings.auto_play)
+        # Open file with default system player (prevents UI freeze)
+        try:
+            if os.path.exists(output_path):
+                os.startfile(output_path)
+        except Exception as e:
+            logger.error(f"Failed to open audio: {e}")
         
         # Add to recent files
         self.settings.add_recent_file(output_path)
+        
+        # Save ref_text to cache for clone voices (so user doesn't need to re-enter)
+        self.voice_panel.save_ref_text_to_cache()
     
     def _on_generate_error(self, error: Exception):
         """Handle generation error"""
@@ -543,9 +565,7 @@ F1          - Show this help"""
         
         messagebox.showerror("Error", f"Generation failed: {str(error)}")
     
-    def _on_audio_save(self, filepath: str):
-        """Handle audio save"""
-        self.status_bar.set_success(f"Saved: {Path(filepath).name}")
+
     
     def _on_srt_process(self, srt_file: str, start_idx: int, end_idx: int):
         """Handle SRT processing request"""
@@ -636,9 +656,6 @@ F1          - Show this help"""
         # Cleanup
         if self.worker:
             self.worker.stop()
-        
-        if hasattr(self, 'audio_panel'):
-            self.audio_panel.cleanup()
         
         if self.tts_engine:
             self.tts_engine.cleanup()

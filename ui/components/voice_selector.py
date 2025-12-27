@@ -9,6 +9,7 @@ from typing import Callable, Optional, Dict
 from tkinter import filedialog
 
 from app.config import Config, ThemeColors, Fonts
+from app.ref_text_cache import get_ref_text_cache
 from ui.theme import (
     ThemedFrame, ThemedLabel, ThemedButton, ThemedOptionMenu
 )
@@ -117,6 +118,31 @@ class VoiceSelectorPanel(ThemedFrame):
             style="muted"
         )
         
+        # Reference text for voice cloning (CRITICAL for quality)
+        self.ref_text_frame = ThemedFrame(self.clone_frame, style="transparent")
+        
+        self.ref_text_label = ThemedLabel(
+            self.ref_text_frame,
+            text="📝 Nội dung audio mẫu:",
+            style="muted"
+        )
+        
+        self.ref_text_entry = ctk.CTkTextbox(
+            self.ref_text_frame,
+            height=60,
+            font=Fonts.BODY_SMALL,
+            fg_color=ThemeColors.BG_TERTIARY,
+            border_color=ThemeColors.BORDER,
+            text_color=ThemeColors.TEXT_PRIMARY,
+            wrap="word"
+        )
+        
+        self.ref_text_hint = ThemedLabel(
+            self.ref_text_frame,
+            text="⚠️ Nhập chính xác nội dung của audio mẫu để clone giọng chính xác",
+            style="muted"
+        )
+        
         # Preview button
         self.preview_btn = ThemedButton(
             self,
@@ -146,6 +172,11 @@ class VoiceSelectorPanel(ThemedFrame):
         
         self.clone_info_label.pack(anchor="w", padx=(25, 0), pady=(5, 0))
         
+        # Reference text frame (packed when clone mode is active)
+        self.ref_text_label.pack(anchor="w", pady=(5, 2))
+        self.ref_text_entry.pack(fill="x", pady=(0, 2))
+        self.ref_text_hint.pack(anchor="w")
+        
         # Preview button
         self.preview_btn.pack(anchor="e", padx=15, pady=15)
         
@@ -165,9 +196,11 @@ class VoiceSelectorPanel(ThemedFrame):
         if self.use_clone:
             self.voice_dropdown.configure(state="disabled")
             self.clone_btn.configure(state="normal")
+            self.ref_text_frame.pack(fill="x", pady=(10, 0), padx=(25, 0))
         else:
             self.voice_dropdown.configure(state="normal")
             self.clone_btn.configure(state="normal")
+            self.ref_text_frame.pack_forget()
     
     def _on_voice_selected(self, voice_name: str):
         """Handle voice selection from dropdown"""
@@ -195,7 +228,7 @@ class VoiceSelectorPanel(ThemedFrame):
             self._set_clone_file(filepath)
     
     def _set_clone_file(self, filepath: str):
-        """Set clone voice file"""
+        """Set clone voice file and load cached ref_text if available"""
         self.clone_file_path = filepath
         
         # Update label
@@ -203,6 +236,16 @@ class VoiceSelectorPanel(ThemedFrame):
         if len(filename) > 30:
             filename = filename[:27] + "..."
         self.clone_file_label.configure(text=filename)
+        
+        # Auto-load cached ref_text if available
+        cache = get_ref_text_cache()
+        cached_text = cache.get(filepath)
+        if cached_text:
+            self.set_ref_text(cached_text)
+            self.ref_text_hint.configure(text="✅ Đã tải nội dung từ lần trước")
+        else:
+            self.set_ref_text("")  # Clear previous text
+            self.ref_text_hint.configure(text="⚠️ Nhập chính xác nội dung của audio mẫu để clone giọng chính xác")
         
         # Switch to clone mode
         self._mode_var.set("clone")
@@ -258,3 +301,40 @@ class VoiceSelectorPanel(ThemedFrame):
     def set_preview_callback(self, callback: Callable):
         """Set callback for preview button"""
         self.preview_btn.configure(command=lambda: callback(self.get_selected_voice()))
+    
+    def get_ref_text(self) -> str:
+        """Get reference text for voice cloning.
+        
+        Returns:
+            str: User-entered transcript of reference audio, empty if not in clone mode
+        """
+        if self.use_clone:
+            return self.ref_text_entry.get("1.0", "end-1c").strip()
+        return ""
+    
+    def set_ref_text(self, text: str):
+        """Set reference text (for loading saved state)"""
+        self.ref_text_entry.delete("1.0", "end")
+        self.ref_text_entry.insert("1.0", text)
+    
+    def save_ref_text_to_cache(self) -> bool:
+        """
+        Save current ref_text to cache for the selected clone file.
+        
+        Returns:
+            bool: True if saved successfully
+        """
+        if not self.use_clone or not self.clone_file_path:
+            return False
+        
+        ref_text = self.get_ref_text()
+        if not ref_text:
+            return False
+        
+        cache = get_ref_text_cache()
+        success = cache.save(self.clone_file_path, ref_text)
+        
+        if success:
+            self.ref_text_hint.configure(text="✅ Đã lưu nội dung cho lần sau")
+        
+        return success
